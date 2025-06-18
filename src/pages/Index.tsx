@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from 'next-themes';
 import Header from '@/components/Header';
@@ -14,6 +13,7 @@ interface Message {
   content: string;
   timestamp: Date;
   model?: string;
+  aiProvider?: string;
   tokens?: number;
 }
 
@@ -27,8 +27,13 @@ interface Chat {
 const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('openai-api-key') || '');
+  const [apiKeys, setApiKeys] = useState({
+    openai: localStorage.getItem('openai-api-key') || '',
+    anthropic: localStorage.getItem('anthropic-api-key') || '',
+    google: localStorage.getItem('google-api-key') || ''
+  });
   const [currentModel, setCurrentModel] = useState('gpt-4');
+  const [currentAiProvider, setCurrentAiProvider] = useState('openai');
   const [chats, setChats] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -62,9 +67,11 @@ const Index = () => {
     }
   }, [chats]);
 
-  const handleApiKeyChange = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('openai-api-key', key);
+  const handleApiKeysChange = (newApiKeys: typeof apiKeys) => {
+    setApiKeys(newApiKeys);
+    Object.entries(newApiKeys).forEach(([provider, key]) => {
+      localStorage.setItem(`${provider}-api-key`, key);
+    });
   };
 
   const createNewChat = () => {
@@ -93,11 +100,13 @@ const Index = () => {
     ));
   };
 
-  const sendMessage = async (content: string, model: string) => {
+  const sendMessage = async (content: string, model: string, aiProvider: string) => {
+    const apiKey = apiKeys[aiProvider as keyof typeof apiKeys];
+    
     if (!apiKey) {
       toast({
         title: "API Key necessária",
-        description: "Configure sua chave da API OpenAI nas configurações",
+        description: `Configure sua chave da API ${aiProvider} nas configurações`,
         variant: "destructive",
       });
       setSettingsOpen(true);
@@ -123,7 +132,8 @@ const Index = () => {
       id: Date.now().toString(),
       type: 'user',
       content,
-      timestamp: new Date()
+      timestamp: new Date(),
+      aiProvider
     };
 
     // Adicionar mensagem do usuário
@@ -136,40 +146,109 @@ const Index = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
+      let response;
+      let assistantMessage: Message;
+
+      if (aiProvider === 'openai') {
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              { role: 'system', content: 'Você é um assistente de IA útil, inteligente e amigável. Responda de forma clara e informativa.' },
+              ...messages.map(msg => ({
+                role: msg.type === 'user' ? 'user' : 'assistant',
+                content: msg.content
+              })),
+              { role: 'user', content }
+            ],
+            temperature: 0.7,
+            max_tokens: 2048
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`OpenAI API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: data.choices[0].message.content,
+          timestamp: new Date(),
           model: model,
-          messages: [
-            { role: 'system', content: 'Você é um assistente de IA útil, inteligente e amigável. Responda de forma clara e informativa.' },
-            ...messages.map(msg => ({
-              role: msg.type === 'user' ? 'user' : 'assistant',
-              content: msg.content
-            })),
-            { role: 'user', content }
-          ],
-          temperature: 0.7,
-          max_tokens: 2048
-        })
-      });
+          aiProvider: aiProvider,
+          tokens: data.usage?.total_tokens
+        };
+      } else if (aiProvider === 'anthropic') {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: model,
+            max_tokens: 2048,
+            messages: [
+              ...messages.map(msg => ({
+                role: msg.type === 'user' ? 'user' : 'assistant',
+                content: msg.content
+              })),
+              { role: 'user', content }
+            ]
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`Anthropic API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: data.content[0].text,
+          timestamp: new Date(),
+          model: model,
+          aiProvider: aiProvider,
+          tokens: data.usage?.input_tokens + data.usage?.output_tokens
+        };
+      } else if (aiProvider === 'google') {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: content }]
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Google API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: data.candidates[0].content.parts[0].text,
+          timestamp: new Date(),
+          model: model,
+          aiProvider: aiProvider
+        };
+      } else {
+        throw new Error('Provedor de IA não suportado');
       }
-
-      const data = await response.json();
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.choices[0].message.content,
-        timestamp: new Date(),
-        model: model,
-        tokens: data.usage?.total_tokens
-      };
 
       // Adicionar resposta da IA
       setChats(prev => prev.map(chat => 
@@ -188,10 +267,10 @@ const Index = () => {
       }
 
     } catch (error) {
-      console.error('Error calling OpenAI API:', error);
+      console.error('Error calling AI API:', error);
       toast({
         title: "Erro na API",
-        description: "Falha ao enviar mensagem. Verifique sua chave de API.",
+        description: `Falha ao enviar mensagem para ${aiProvider}. Verifique sua chave de API.`,
         variant: "destructive",
       });
     } finally {
@@ -262,7 +341,9 @@ const Index = () => {
               onSendMessage={sendMessage}
               isLoading={isLoading}
               currentModel={currentModel}
+              currentAiProvider={currentAiProvider}
               onModelChange={setCurrentModel}
+              onAiProviderChange={setCurrentAiProvider}
             />
           </main>
         </div>
@@ -271,8 +352,8 @@ const Index = () => {
         <SettingsModal
           isOpen={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          apiKey={apiKey}
-          onApiKeyChange={handleApiKeyChange}
+          apiKeys={apiKeys}
+          onApiKeysChange={handleApiKeysChange}
         />
       </div>
     </ThemeProvider>

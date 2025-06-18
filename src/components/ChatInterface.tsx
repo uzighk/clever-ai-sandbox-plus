@@ -6,6 +6,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { 
   Send, 
   Paperclip, 
   Mic, 
@@ -16,7 +23,9 @@ import {
   RefreshCw,
   Sparkles,
   User,
-  Bot
+  Bot,
+  Brain,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -27,21 +36,50 @@ interface Message {
   content: string;
   timestamp: Date;
   model?: string;
+  aiProvider?: string;
   tokens?: number;
 }
 
 interface ChatInterfaceProps {
   messages: Message[];
-  onSendMessage: (message: string, model: string) => void;
+  onSendMessage: (message: string, model: string, aiProvider: string) => void;
   isLoading: boolean;
   currentModel: string;
+  currentAiProvider: string;
   onModelChange: (model: string) => void;
+  onAiProviderChange: (provider: string) => void;
 }
 
-const models = [
-  { id: 'gpt-4', name: 'GPT-4', description: 'Mais inteligente' },
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Mais rápido' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5', description: 'Econômico' },
+const aiProviders = [
+  { 
+    id: 'openai', 
+    name: 'OpenAI', 
+    icon: Sparkles,
+    models: [
+      { id: 'gpt-4', name: 'GPT-4', description: 'Mais inteligente' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Mais rápido' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5', description: 'Econômico' },
+    ]
+  },
+  { 
+    id: 'anthropic', 
+    name: 'Anthropic', 
+    icon: Brain,
+    models: [
+      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Mais capaz' },
+      { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', description: 'Balanceado' },
+      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Mais rápido' },
+    ]
+  },
+  { 
+    id: 'google', 
+    name: 'Google', 
+    icon: Zap,
+    models: [
+      { id: 'gemini-pro', name: 'Gemini Pro', description: 'Avançado' },
+      { id: 'gemini-pro-vision', name: 'Gemini Pro Vision', description: 'Com visão' },
+    ]
+  }
 ];
 
 const ChatInterface = ({ 
@@ -49,12 +87,17 @@ const ChatInterface = ({
   onSendMessage, 
   isLoading, 
   currentModel, 
-  onModelChange 
+  currentAiProvider,
+  onModelChange,
+  onAiProviderChange
 }: ChatInterfaceProps) => {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const currentProvider = aiProviders.find(p => p.id === currentAiProvider);
+  const availableModels = currentProvider?.models || [];
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -64,7 +107,7 @@ const ChatInterface = ({
 
   const handleSend = () => {
     if (input.trim() && !isLoading) {
-      onSendMessage(input.trim(), currentModel);
+      onSendMessage(input.trim(), currentModel, currentAiProvider);
       setInput('');
     }
   };
@@ -94,10 +137,33 @@ const ChatInterface = ({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Model Selector */}
-      <div className="p-4 border-b border-white/10">
+      {/* AI Provider and Model Selector */}
+      <div className="p-4 border-b border-white/10 space-y-3">
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">
+              Provedor de IA
+            </label>
+            <Select value={currentAiProvider} onValueChange={onAiProviderChange}>
+              <SelectTrigger className="glass border-white/20">
+                <SelectValue placeholder="Selecione o provedor" />
+              </SelectTrigger>
+              <SelectContent className="glass border-white/20">
+                {aiProviders.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>
+                    <div className="flex items-center gap-2">
+                      <provider.icon className="h-4 w-4" />
+                      {provider.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        
         <div className="flex gap-2 overflow-x-auto">
-          {models.map((model) => (
+          {availableModels.map((model) => (
             <Button
               key={model.id}
               variant={currentModel === model.id ? "default" : "outline"}
@@ -110,7 +176,7 @@ const ChatInterface = ({
                   : "glass hover:bg-white/10"
               )}
             >
-              <Sparkles className="h-3 w-3 mr-1" />
+              <currentProvider?.icon className="h-3 w-3 mr-1" />
               {model.name}
               <Badge variant="secondary" className="ml-2 text-xs">
                 {model.description}
@@ -188,6 +254,11 @@ const ChatInterface = ({
                     <span className="text-xs text-muted-foreground">
                       {message.timestamp.toLocaleTimeString()}
                     </span>
+                    {message.aiProvider && (
+                      <Badge variant="outline" className="text-xs">
+                        {aiProviders.find(p => p.id === message.aiProvider)?.name}
+                      </Badge>
+                    )}
                     {message.model && (
                       <Badge variant="outline" className="text-xs">
                         {message.model}
@@ -228,7 +299,7 @@ const ChatInterface = ({
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 hover:bg-blue-500/20 text-blue-500"
-                            onClick={() => onSendMessage(`Reformule: ${message.content}`, currentModel)}
+                            onClick={() => onSendMessage(`Reformule: ${message.content}`, currentModel, currentAiProvider)}
                           >
                             <RefreshCw className="h-3 w-3" />
                           </Button>
@@ -319,7 +390,8 @@ const ChatInterface = ({
           
           <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
             <div className="flex items-center gap-4">
-              <span>Modelo: {models.find(m => m.id === currentModel)?.name}</span>
+              <span>IA: {currentProvider?.name}</span>
+              <span>Modelo: {availableModels.find(m => m.id === currentModel)?.name}</span>
               <span>Caracteres: {input.length}</span>
             </div>
             <span>Pressione Enter para enviar</span>
