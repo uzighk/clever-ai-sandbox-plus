@@ -38,7 +38,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal = ({ isOpen, onClose, apiKeys, onApiKeysChange }: SettingsModalProps) => {
-  const [localApiKeys, setLocalApi Keys] = useState<ApiKeys>(apiKeys);
+  const [localApiKeys, setLocalApiKeys] = useState<ApiKeys>(apiKeys);
   const [showKeys, setShowKeys] = useState({
     openai: false,
     anthropic: false,

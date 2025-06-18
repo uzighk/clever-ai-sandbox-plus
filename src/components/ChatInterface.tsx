@@ -176,7 +176,7 @@ const ChatInterface = ({
                   : "glass hover:bg-white/10"
               )}
             >
-              <currentProvider?.icon className="h-3 w-3 mr-1" />
+              {currentProvider?.icon && <currentProvider.icon className="h-3 w-3 mr-1" />}
               {model.name}
               <Badge variant="secondary" className="ml-2 text-xs">
                 {model.description}
